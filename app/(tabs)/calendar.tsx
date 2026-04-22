@@ -2,31 +2,30 @@ import React, { useState, useCallback, useRef, useMemo } from 'react';
 import { StyleSheet, View, Text, Image, Dimensions, TouchableOpacity, SafeAreaView, ScrollView } from 'react-native';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { getExpenses, initDatabase } from '../../database';
-// IMPORT THÊM LOGIC TIỀN TỆ
-import { getCurrencyConfig, Currency, CURRENCIES } from '../../settings_db'; 
+// IMPORT THÊM LOGIC TIỀN TỆ & QUY ĐỔI
+import { getCurrencyConfig, Currency, CURRENCIES, convertCurrency } from '../../settings_db';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 
 const { width } = Dimensions.get('window');
 
-interface Expense { id: number; amount: string; imageUri: string; date: string; }
+// Cập nhật interface thêm field currency
+interface Expense { id: number; amount: string; currency: string; imageUri: string; date: string; }
 
 export default function CalendarScreen() {
   const router = useRouter();
   const [history, setHistory] = useState<Expense[]>([]);
-  
-  // STATE LƯU TRỮ TIỀN TỆ
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
 
   const TODAY = useMemo(() => new Date(), []);
-  const [currentDate, setCurrentDate] = useState(new Date()); 
+  const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDate, setSelectedDate] = useState<string>(TODAY.toDateString());
 
   // --- CẬP NHẬT LOAD DATA (CẢ DB VÀ SETTINGS) ---
   const loadData = async () => {
     initDatabase();
-    
-    // Đọc đơn vị tiền tệ từ settings
+
+    // Đọc cấu hình tiền tệ hiện tại từ Setting
     const config = await getCurrencyConfig();
     setCurrency(config);
 
@@ -35,10 +34,9 @@ export default function CalendarScreen() {
     setHistory(data);
   };
 
-  // Đảm bảo cập nhật mỗi khi màn hình được focus
   useFocusEffect(
-    useCallback(() => { 
-      loadData(); 
+    useCallback(() => {
+      loadData();
     }, [])
   );
 
@@ -46,11 +44,11 @@ export default function CalendarScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     const newDate = new Date(currentDate.getFullYear(), currentDate.getMonth() + offset, 1);
     setCurrentDate(newDate);
-    
+
     if (newDate.getMonth() === TODAY.getMonth() && newDate.getFullYear() === TODAY.getFullYear()) {
-      setSelectedDate(TODAY.toDateString()); 
+      setSelectedDate(TODAY.toDateString());
     } else {
-      setSelectedDate(newDate.toDateString()); 
+      setSelectedDate(newDate.toDateString());
     }
   };
 
@@ -66,7 +64,7 @@ export default function CalendarScreen() {
     const startDayOfMonth = new Date(year, month, 1).getDay();
     const emptySlots = startDayOfMonth === 0 ? 6 : startDayOfMonth - 1;
     const daysInMonth = new Date(year, month + 1, 0).getDate();
-    
+
     const days = [];
     for (let i = 0; i < emptySlots; i++) {
       days.push({ day: null, dateStr: null });
@@ -78,8 +76,22 @@ export default function CalendarScreen() {
     return days;
   }, [currentDate]);
 
+  // Lấy các khoản chi tiêu của ngày đang chọn
   const expensesOfSelectedDate = history.filter(ex => new Date(ex.date).toDateString() === selectedDate);
-  const totalOfDay = expensesOfSelectedDate.reduce((sum, item) => sum + parseInt(item.amount || '0'), 0);
+
+  // TÍNH TỔNG NGÀY: Quy đổi từng món về đơn vị Setting hiện tại
+  const totalOfDayConverted = expensesOfSelectedDate.reduce((sum, item) => {
+    const converted = convertCurrency(Number(item.amount), item.currency, currency.code);
+    return sum + converted;
+  }, 0);
+
+  // Helper format hiển thị (VNĐ nguyên số, ngoại tệ 2 số lẻ)
+  const formatDisplay = (num: number) => {
+    return num.toLocaleString('vi-VN', {
+      maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2,
+      minimumFractionDigits: currency.code === 'VNĐ' ? 0 : 0
+    });
+  };
 
   return (
     <SafeAreaView style={styles.container}>
@@ -87,7 +99,7 @@ export default function CalendarScreen() {
         <TouchableOpacity onPress={() => changeMonth(-1)} style={styles.navBtn}>
           <Ionicons name="chevron-back" size={20} color="#FFD700" />
         </TouchableOpacity>
-        
+
         <TouchableOpacity onPress={goToday} style={styles.titleContainer} activeOpacity={0.7}>
           <Text style={styles.monthTitle}>THÁNG {currentDate.getMonth() + 1}</Text>
           <Text style={styles.yearTitle}>{currentDate.getFullYear()}</Text>
@@ -113,17 +125,17 @@ export default function CalendarScreen() {
               const isToday = item.dateStr === TODAY.toDateString();
 
               return (
-                <TouchableOpacity 
-                  key={index} 
+                <TouchableOpacity
+                  key={index}
                   disabled={!item.day}
                   onPress={() => {
                     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
                     if (item.dateStr) setSelectedDate(item.dateStr);
                   }}
                   style={[
-                    styles.dayCell, 
+                    styles.dayCell,
                     isSelected && styles.selectedDayCell,
-                    isToday && styles.todayBorder 
+                    isToday && styles.todayBorder
                   ]}
                 >
                   {!item.day ? null : expenseOfDay ? (
@@ -131,8 +143,8 @@ export default function CalendarScreen() {
                   ) : (
                     <View style={[styles.dayCircle, isToday && styles.todayCircle]}>
                       <Text style={[
-                        styles.dayText, 
-                        isSelected && styles.selectedDayText, 
+                        styles.dayText,
+                        isSelected && styles.selectedDayText,
                         isToday && styles.todayText
                       ]}>
                         {item.day}
@@ -152,28 +164,40 @@ export default function CalendarScreen() {
               {new Date(selectedDate).toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric' })}
             </Text>
             <View style={styles.totalBadge}>
-                {/* THAY "đ" THÀNH currency.symbol */}
-                <Text style={styles.detailsTotal}>{totalOfDay.toLocaleString('vi-VN')} {currency.symbol}</Text>
+              {/* HIỂN THỊ TỔNG NGÀY ĐÃ QUY ĐỔI THEO SETTING */}
+              <Text style={styles.detailsTotal}>{formatDisplay(totalOfDayConverted)} {currency.symbol}</Text>
             </View>
           </View>
 
           {expensesOfSelectedDate.length > 0 ? (
-            expensesOfSelectedDate.map(item => (
-              <View key={item.id} style={styles.detailCard}>
-                <Image source={{ uri: item.imageUri }} style={styles.detailThumb} />
-                <View style={styles.detailInfo}>
-                  {/* THAY "đ" THÀNH currency.symbol */}
-                  <Text style={styles.detailAmount}>{parseInt(item.amount).toLocaleString('vi-VN')} {currency.symbol}</Text>
-                  <Text style={styles.detailTime}>{new Date(item.date).toLocaleTimeString('vi-VN', {hour: '2-digit', minute:'2-digit'})}</Text>
+            expensesOfSelectedDate.map(item => {
+              // QUY ĐỔI GIÁ TRỊ TỪNG ITEM ĐỂ HIỂN THỊ ĐỒNG NHẤT
+              const displayVal = convertCurrency(Number(item.amount), item.currency, currency.code);
+
+              return (
+                <View key={item.id} style={styles.detailCard}>
+                  <Image source={{ uri: item.imageUri }} style={styles.detailThumb} />
+                  <View style={styles.detailInfo}>
+                    <Text style={styles.detailAmount}>{formatDisplay(displayVal)} {currency.symbol}</Text>
+                    <Text style={styles.detailTime}>{new Date(item.date).toLocaleTimeString('vi-VN', { hour: '2-digit', minute: '2-digit' })}</Text>
+                  </View>
+                  <TouchableOpacity
+                    onPress={() => router.push({
+                      pathname: '/modal',
+                      params: {
+                        editId: item.id.toString(),
+                        oldAmount: item.amount,
+                        oldImage: item.imageUri,
+                        oldCurrency: item.currency // <-- THÊM DÒNG NÀY
+                      }
+                    })}
+                    style={styles.actionBtn}
+                  >
+                    <Ionicons name="pencil" size={16} color="#FFD700" />
+                  </TouchableOpacity>
                 </View>
-                <TouchableOpacity 
-                  onPress={() => router.push({ pathname: '/modal', params: { editId: item.id, oldAmount: item.amount, oldImage: item.imageUri } })}
-                  style={styles.actionBtn}
-                >
-                  <Ionicons name="pencil" size={16} color="#FFD700" />
-                </TouchableOpacity>
-              </View>
-            ))
+              );
+            })
           ) : (
             <View style={styles.emptyBox}>
               <Ionicons name="sunny-outline" size={40} color="#222" />

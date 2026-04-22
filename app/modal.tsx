@@ -12,8 +12,7 @@ import { addExpense, updateExpense } from '../database';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getCurrencyConfig, Currency } from '../settings_db';
-
+import { getCurrencyConfig, Currency, convertCurrency } from '../settings_db';
 const { width } = Dimensions.get('window');
 const ZOOM_LEVELS = [0.5, 1, 2, 3];
 const ZOOM_1X = 0.035;
@@ -23,16 +22,26 @@ export default function CameraModal() {
   const router = useRouter();
   const params = useLocalSearchParams();
   const [permission, requestPermission] = useCameraPermissions();
-  const [currency, setCurrency] = useState<Currency>({ label: '', code: 'VNĐ', symbol: 'đ' });
+  // Sửa dòng khai báo state currency:
+const [currency, setCurrency] = useState<Currency>({ 
+  label: '', 
+  code: (params.oldCurrency as string) || 'VNĐ', // Lấy từ params nếu có
+  symbol: params.oldCurrency === 'VNĐ' ? 'đ' : '$', // Tạm thời hoặc để trống
+  rate: 1 
+});
 
   // --- STATE ---
   const editId = params.editId ? String(params.editId) : null;
   const [photo, setPhoto] = useState<string | null>(params.oldImage ? String(params.oldImage) : null);
 
   // Format ban đầu nếu edit
-  const initialAmount = params.oldAmount ? String(params.oldAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.') : '';
-  const [amount, setAmount] = useState(initialAmount);
+  const initialAmount = params.oldAmount 
+  ? (params.oldCurrency === 'VNĐ' 
+      ? String(params.oldAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.') 
+      : String(params.oldAmount).replace('.', ',')) 
+  : '';
 
+const [amount, setAmount] = useState(initialAmount);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [zoom, setZoom] = useState(ZOOM_1X);
   const [focusPos, setFocusPos] = useState({ x: 0, y: 0 });
@@ -54,23 +63,77 @@ export default function CameraModal() {
     const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
     const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
     const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
-    const load = async () => {
-      const config = await getCurrencyConfig();
-      setCurrency(config);
-    };
-    load();
+
+    const initConfig = async () => {
+    const config = await getCurrencyConfig();
+    setCurrency(config);
+
+    // LOGIC CÂN NÃO KHI NHẤN EDIT
+    if (editId && params.oldAmount && params.oldCurrency) {
+  const converted = convertCurrency(
+    Number(params.oldAmount),
+    String(params.oldCurrency),
+    config.code
+  );
+
+  let rawString = "";
+  if (config.code === 'VNĐ') {
+    rawString = Math.round(converted).toString();
+  } else {
+    // Chuyển 1500.5 -> "1500,5" (đổi chấm thành phẩy trước khi đưa vào hàm format)
+    rawString = converted.toString().replace('.', ',');
+  }
+
+  // Gọi formatCurrency để nó tự thêm các dấu chấm hàng nghìn
+  setAmount(formatCurrency(rawString, config.code));
+}
+  };
+  initConfig();
+
     return () => {
       showSub.remove();
       hideSub.remove();
       if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
       if (focusTimeout.current) clearTimeout(focusTimeout.current);
     };
-  }, []);
+  }, [editId]); // Thêm editId vào đây để nó re-run nếu id thay đổi
 
-  const formatCurrency = (val: string) => {
-    const cleanNumber = val.replace(/\D/g, '');
-    return cleanNumber.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
-  };
+  const formatCurrency = (val: string, forcedCode?: string) => {
+  if (!val) return '';
+  const activeCode = forcedCode || currency.code;
+
+  // 1. Xử lý đầu vào: Xóa tất cả dấu chấm (phân cách hàng nghìn cũ)
+  // Chỉ giữ lại số và dấu phẩy
+  let cleanNext = val.replace(/\./g, ''); 
+  
+  // Nếu là VNĐ, xóa luôn cả dấu phẩy (không cho nhập thập phân)
+  if (activeCode === 'VNĐ') {
+    cleanNext = cleanNext.replace(/,/g, '');
+  }
+
+  // Chặn không cho nhập ký tự lạ, chỉ giữ số và tối đa 1 dấu phẩy
+  cleanNext = cleanNext.replace(/[^0-9,]/g, '');
+  const parts = cleanNext.split(',');
+  
+  // Nếu có nhiều hơn 1 dấu phẩy, chỉ lấy cái đầu tiên
+  let integerPart = parts[0];
+  let decimalPart = parts[1] !== undefined ? parts[1].substring(0, 2) : null;
+
+  // 2. Định dạng phần nguyên: Thêm dấu chấm mỗi 3 chữ số (1000 -> 1.000)
+  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+  // 3. Lắp ráp lại
+  if (decimalPart !== null) {
+    return `${formattedInteger},${decimalPart}`;
+  }
+  
+  // Trường hợp người dùng mới gõ dấu phẩy (ví dụ "1.500,")
+  if (cleanNext.includes(',')) {
+    return `${formattedInteger},`;
+  }
+
+  return formattedInteger;
+};
 
   const handleSaveToGallery = async () => {
     if (!photo) return;
@@ -149,15 +212,24 @@ export default function CameraModal() {
   };
 
   const handleFinalSave = () => {
-    if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền chi tiêu.");
-    const rawAmount = amount.replace(/\./g, '');
-    if (editId && editId !== "undefined") {
-      updateExpense(Number(editId), rawAmount, photo!);
-    } else {
-      addExpense(rawAmount, photo!);
-    }
-    router.back();
-  };
+  if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền.");
+
+  // Bước 1: Xóa tất cả dấu chấm (hàng nghìn)
+  // Bước 2: Đổi dấu phẩy (thập phân) thành dấu chấm để máy hiểu
+  const normalized = amount.replace(/\./g, '').replace(',', '.');
+  const numAmount = parseFloat(normalized);
+
+  if (isNaN(numAmount)) return Alert.alert("Lỗi", "Số tiền không hợp lệ");
+
+  const baseAmount = numAmount * (currency.rate || 1);
+
+  if (editId && editId !== "undefined") {
+    updateExpense(Number(editId), normalized, currency.code, baseAmount, photo!);
+  } else {
+    addExpense(normalized, currency.code, baseAmount, photo!);
+  }
+  router.back();
+};
 
   if (!permission?.granted) {
     return (
@@ -229,8 +301,8 @@ export default function CameraModal() {
                 <View style={styles.amountContainer}>
                   <Text style={styles.currencySymbol}>{currency.code}</Text>
                   <TextInput
-                    style={styles.moneyInput} // ĐỒNG NHẤT STYLE
-                    keyboardType="numeric"
+                    style={styles.moneyInput}
+                    keyboardType="decimal-pad" // Đổi từ numeric sang decimal-pad
                     value={amount}
                     onChangeText={(text) => setAmount(formatCurrency(text))}
                     placeholder="0"
@@ -263,8 +335,6 @@ const styles = StyleSheet.create({
   pill: { width: 40, height: 4, backgroundColor: '#1a1a1a', borderRadius: 2 },
   closeIcon: { position: 'absolute', right: 20 },
   focusRing: { position: 'absolute', width: 70, height: 70, borderRadius: 35, borderWidth: 1.2, borderColor: '#FFD700', zIndex: 99 },
-
-  // CAMERA UI
   uiOverlay: { ...StyleSheet.absoluteFillObject, justifyContent: 'space-between', paddingVertical: 20, alignItems: 'center' },
   zoomBadge: { backgroundColor: 'rgba(0,0,0,0.5)', paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, marginTop: 10 },
   zoomText: { color: '#FFD700', fontSize: 11, fontWeight: 'bold' },
@@ -275,8 +345,6 @@ const styles = StyleSheet.create({
   flipBtn: { width: 50, height: 50, borderRadius: 25, backgroundColor: 'rgba(255,255,255,0.1)', justifyContent: 'center', alignItems: 'center' },
   shutter: { width: 80, height: 80, borderRadius: 40, borderWidth: 5, borderColor: '#fff', justifyContent: 'center', alignItems: 'center' },
   shutterIn: { width: 62, height: 62, borderRadius: 31, backgroundColor: '#fff' },
-
-  // PREVIEW UI
   previewContainer: { flex: 1, alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 25, paddingBottom: 15 },
   imageWrapper: { width: width * 0.88, aspectRatio: 1, marginTop: 20, borderRadius: 45, overflow: 'hidden', backgroundColor: '#111' },
   imageWrapperKeyboard: { width: width * 0.65, marginTop: 5 },
@@ -284,19 +352,11 @@ const styles = StyleSheet.create({
   imageFloatingToolbar: { position: 'absolute', bottom: 15, alignSelf: 'center', flexDirection: 'row', gap: 10 },
   floatingPill: { flexDirection: 'row', alignItems: 'center', backgroundColor: 'rgba(255, 215, 0, 0.95)', paddingHorizontal: 12, paddingVertical: 8, borderRadius: 20, gap: 5 },
   floatingPillText: { color: '#000', fontWeight: 'bold', fontSize: 11 },
-
-  // ACTION AREA ĐỒNG NHẤT
   actionArea: { width: '100%', gap: 20, marginBottom: 20 },
   actionAreaKeyboard: { gap: 10, marginBottom: 10 },
   amountContainer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   currencySymbol: { color: '#FFD700', fontSize: 20, fontWeight: 'bold', marginRight: 10 },
-  moneyInput: {
-    color: '#fff',
-    fontSize: 40, // CỠ CHỮ ĐỒNG NHẤT 40
-    fontWeight: '800',
-    textAlign: 'center',
-    minWidth: 100,
-  },
+  moneyInput: { color: '#fff', fontSize: 40, fontWeight: '800', textAlign: 'center', minWidth: 100 },
   saveBtn: { backgroundColor: '#FFD700', height: 62, borderRadius: 31, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 10 },
   saveBtnDisabled: { backgroundColor: '#1a1a1a', opacity: 0.5 },
   saveBtnText: { color: '#000', fontSize: 18, fontWeight: '900' },

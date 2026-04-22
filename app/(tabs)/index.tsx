@@ -3,15 +3,15 @@ import { StyleSheet, View, Text, Image, Dimensions, RefreshControl, TouchableOpa
 import { SafeAreaView } from 'react-native-safe-area-context'; 
 import { useFocusEffect, useRouter } from 'expo-router';
 import { getExpenses, initDatabase, deleteExpense } from '../../database';
-// IMPORT THÊM CÀI ĐẶT TIỀN TỆ
-import { getCurrencyConfig, Currency, CURRENCIES } from '../../settings_db'; 
+import { getCurrencyConfig, Currency, CURRENCIES, convertCurrency } from '../../settings_db'; 
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
 import * as MediaLibrary from 'expo-media-library';
 
 const { width } = Dimensions.get('window');
 
-interface Expense { id: number; amount: string; imageUri: string; date: string; }
+// Thêm field currency vào interface
+interface Expense { id: number; amount: string; currency: string; imageUri: string; date: string; }
 type Period = 'day' | 'week' | 'month' | 'year';
 type LayoutType = 1 | 2 | 3;
 
@@ -22,65 +22,27 @@ export default function HomeScreen() {
   const [layoutType, setLayoutType] = useState<LayoutType>(2);
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Expense | null>(null);
-  
-  // STATE LƯU TRỮ ĐƠN VỊ TIỀN TỆ HIỆN TẠI
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  // --- HÀM LOAD DATA (BAO GỒM CẢ TIỀN TỆ) ---
+  // --- LOGIC LOAD DATA ---
   const loadData = async () => {
     initDatabase();
-    // Load cấu hình tiền tệ trước
     const config = await getCurrencyConfig();
     setCurrency(config);
 
-    // Load dữ liệu chi tiêu
     const data = getExpenses() as Expense[];
     filterData(data, period);
   };
 
-  // Dùng useFocusEffect để mỗi khi từ Settings quay lại, nó cập nhật ngay lập tức
-  useFocusEffect(
-    useCallback(() => {
-      loadData();
-    }, [period])
-  );
+  useFocusEffect(useCallback(() => { loadData(); }, [period]));
 
-  const handleSaveImage = async (uri: string) => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      try {
-        await MediaLibrary.saveToLibraryAsync(uri);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert("Thành công", "Đã lưu ảnh vào thư viện!");
-      } catch (e) {
-        Alert.alert("Lỗi", "Không thể lưu ảnh.");
-      }
-    }
-  };
-
-  // --- ANIMATION HEADER (Giữ nguyên logic cũ) ---
-  const headerHeight = scrollY.interpolate({
-    inputRange: [0, 120],
-    outputRange: [150, 45],
-    extrapolate: 'clamp',
-  });
-  const totalScale = scrollY.interpolate({
-    inputRange: [0, 120],
-    outputRange: [1, 0.55],
-    extrapolate: 'clamp',
-  });
-  const totalTranslateY = scrollY.interpolate({
-    inputRange: [0, 120],
-    outputRange: [0, -5],
-    extrapolate: 'clamp',
-  });
-  const headerOpacity = scrollY.interpolate({
-    inputRange: [0, 60],
-    outputRange: [1, 0],
-    extrapolate: 'clamp',
-  });
+  // --- ANIMATION HEADER ---
+  const headerHeight = scrollY.interpolate({ inputRange: [0, 120], outputRange: [150, 45], extrapolate: 'clamp' });
+  const totalScale = scrollY.interpolate({ inputRange: [0, 120], outputRange: [1, 0.55], extrapolate: 'clamp' });
+  const totalTranslateY = scrollY.interpolate({ inputRange: [0, 120], outputRange: [0, -5], extrapolate: 'clamp' });
+  const headerOpacity = scrollY.interpolate({ inputRange: [0, 60], outputRange: [1, 0], extrapolate: 'clamp' });
 
   const filterData = (data: Expense[], currentPeriod: Period) => {
     const now = new Date();
@@ -113,13 +75,18 @@ export default function HomeScreen() {
   };
 
   const handleEdit = (item: Expense) => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    setSelectedItem(null);
-    router.push({
-      pathname: '/modal',
-      params: { editId: item.id.toString(), oldAmount: item.amount, oldImage: item.imageUri }
-    });
-  };
+  Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+  setSelectedItem(null);
+  router.push({
+    pathname: '/modal',
+    params: { 
+      editId: item.id.toString(), 
+      oldAmount: item.amount, 
+      oldImage: item.imageUri,
+      oldCurrency: item.currency // <-- THÊM DÒNG NÀY
+    }
+  });
+};
 
   const confirmDelete = (item: Expense) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
@@ -129,20 +96,46 @@ export default function HomeScreen() {
     ]);
   };
 
+  const handleSaveImage = async (uri: string) => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status === 'granted') {
+      try {
+        await MediaLibrary.saveToLibraryAsync(uri);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Thành công", "Đã lưu ảnh!");
+      } catch (e) {
+        Alert.alert("Lỗi", "Không thể lưu ảnh.");
+      }
+    }
+  };
+
   const columnWidth = getColumnWidth();
   const groupedData = groupDataByDate(filteredData);
-  const totalAmount = filteredData.reduce((s, i) => s + parseInt(i.amount || '0'), 0);
+
+  // TÍNH TỔNG TIỀN: Quy đổi từng item về đơn vị Setting hiện tại rồi mới cộng
+  const totalAmountConverted = filteredData.reduce((sum, item) => {
+    const converted = convertCurrency(Number(item.amount), item.currency, currency.code);
+    return sum + converted;
+  }, 0);
+
+  // Hàm format hiển thị số (VNĐ ko có decimal, ngoại tệ có 2 số sau dấu phẩy)
+  const formatDisplay = (num: number) => {
+  return num.toLocaleString('vi-VN', { 
+    // Nếu là VNĐ thì ko hiện số lẻ, nếu ngoại tệ thì hiện tối đa 2 số lẻ
+    maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2,
+    // Không ép buộc hiện 2 số lẻ (để 1,5 thì hiện 1,5 chứ ko phải 1,50 nếu ông ko thích)
+    minimumFractionDigits: 0 
+  });
+};
 
   return (
     <View style={styles.container}>
-      {/* HEADER CỐ ĐỊNH */}
       <View style={styles.fixedHeaderContainer}>
         <SafeAreaView style={{ flex: 0, backgroundColor: '#161618' }} edges={['top']} />
         <Animated.View style={[styles.header, { height: headerHeight }]}>
           <Animated.View style={{ transform: [{ scale: totalScale }, { translateY: totalTranslateY }] }}>
             <Text style={styles.totalAmount}>
-              {totalAmount.toLocaleString('vi-VN')}
-              {/* THAY "đ" THÀNH currency.symbol */}
+              {formatDisplay(totalAmountConverted)}
               <Text style={styles.currencySymbol}> {currency.symbol}</Text>
             </Text>
           </Animated.View>
@@ -184,32 +177,36 @@ export default function HomeScreen() {
                <View style={styles.dateLine} />
             </View>
             <View style={styles.grid}>
-              {groupedData[date].map((item) => (
-                <View key={item.id} style={{ width: columnWidth, marginBottom: 20 }}>
-                  <TouchableOpacity 
-                    style={[styles.card, { height: columnWidth }]} 
-                    onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedItem(item); }} 
-                    activeOpacity={0.9}
-                  >
-                    <Image source={{ uri: item.imageUri }} style={styles.image} />
-                    <View style={styles.cardOverlay}>
-                      {/* THAY "đ" THÀNH currency.symbol */}
-                      <Text style={[styles.cardAmount, { fontSize: layoutType === 3 ? 9 : 11 }]}>
-                        {parseInt(item.amount).toLocaleString('vi-VN')}{currency.symbol}
-                      </Text>
-                    </View>
-                  </TouchableOpacity>
+              {groupedData[date].map((item) => {
+                // QUY ĐỔI GIÁ TRỊ TỪNG ITEM ĐỂ HIỂN THỊ ĐỒNG NHẤT VỚI SETTING
+                const displayVal = convertCurrency(Number(item.amount), item.currency, currency.code);
+                
+                return (
+                  <View key={item.id} style={{ width: columnWidth, marginBottom: 20 }}>
+                    <TouchableOpacity 
+                      style={[styles.card, { height: columnWidth }]} 
+                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedItem(item); }} 
+                      activeOpacity={0.9}
+                    >
+                      <Image source={{ uri: item.imageUri }} style={styles.image} />
+                      <View style={styles.cardOverlay}>
+                        <Text style={[styles.cardAmount, { fontSize: layoutType === 3 ? 9 : 11 }]}>
+                          {formatDisplay(displayVal)}{currency.symbol}
+                        </Text>
+                      </View>
+                    </TouchableOpacity>
 
-                  <View style={styles.actionRow}>
-                    <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(item)}>
-                      <Ionicons name="pencil" size={12} color="#000" />
-                    </TouchableOpacity>
-                    <TouchableOpacity style={styles.btnDelete} onPress={() => confirmDelete(item)}>
-                      <Ionicons name="trash-outline" size={12} color="#FF6B6B" />
-                    </TouchableOpacity>
+                    <View style={styles.actionRow}>
+                      <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(item)}>
+                        <Ionicons name="pencil" size={12} color="#000" />
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.btnDelete} onPress={() => confirmDelete(item)}>
+                        <Ionicons name="trash-outline" size={12} color="#FF6B6B" />
+                      </TouchableOpacity>
+                    </View>
                   </View>
-                </View>
-              ))}
+                );
+              })}
             </View>
           </View>
         ))}
@@ -231,9 +228,9 @@ export default function HomeScreen() {
                 </TouchableOpacity>
               </View>
 
-              {/* THAY "VNĐ" THÀNH currency.code */}
+              {/* TRONG CHI TIẾT: HIỂN THỊ THEO ĐƠN VỊ SETTING ĐÃ CHỌN */}
               <Text style={styles.fullAmount}>
-                {parseInt(selectedItem.amount).toLocaleString('vi-VN')} {currency.code}
+                {formatDisplay(convertCurrency(Number(selectedItem.amount), selectedItem.currency, currency.code))} {currency.code}
               </Text>
               <Text style={styles.fullDate}>{new Date(selectedItem.date).toLocaleString('vi-VN')}</Text>
               
@@ -259,7 +256,6 @@ export default function HomeScreen() {
   );
 }
 
-// (Các style giữ nguyên như cũ)
 const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: '#161618' },
     fixedHeaderContainer: { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 100, backgroundColor: '#161618' },

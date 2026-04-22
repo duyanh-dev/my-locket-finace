@@ -1,58 +1,57 @@
 import * as SQLite from 'expo-sqlite';
 
-// 1. Mở hoặc tạo file database trong máy iPhone
 const db = SQLite.openDatabaseSync('finance.db');
 
-// 2. Khởi tạo bảng nếu chưa có
 export const initDatabase = () => {
+  // 1. Tạo bảng cơ bản trước
   db.execSync(`
     CREATE TABLE IF NOT EXISTS expenses (
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       amount TEXT,
+      currency TEXT, 
       imageUri TEXT,
       date TEXT
     );
   `);
+
+  // 2. ÉP THÊM CỘT: Dùng cách này cho chắc chắn
+  try {
+    // Kiểm tra xem cột amount_base đã tồn tại chưa
+    const tableInfo: any = db.getAllSync("PRAGMA table_info(expenses)");
+    const hasAmountBase = tableInfo.some((col: any) => col.name === 'amount_base');
+    const hasCurrency = tableInfo.some((col: any) => col.name === 'currency');
+
+    if (!hasCurrency) {
+      db.execSync("ALTER TABLE expenses ADD COLUMN currency TEXT DEFAULT 'VNĐ';");
+    }
+    if (!hasAmountBase) {
+      db.execSync("ALTER TABLE expenses ADD COLUMN amount_base REAL DEFAULT 0;");
+    }
+  } catch (e) {
+    console.log("Migration error:", e);
+  }
 };
 
-// 3. Thêm mới một khoản chi tiêu
-export const addExpense = (amount: string, imageUri: string) => {
+export const addExpense = (amount: string, currency: string, amount_base: number, imageUri: string) => {
   const date = new Date().toISOString();
   db.runSync(
-    'INSERT INTO expenses (amount, imageUri, date) VALUES (?, ?, ?)',
-    [amount, imageUri, date]
+    'INSERT INTO expenses (amount, currency, amount_base, imageUri, date) VALUES (?, ?, ?, ?, ?)',
+    [amount, currency, amount_base, imageUri, date]
   );
 };
 
-// 4. Lấy toàn bộ danh sách chi tiêu (Sắp xếp mới nhất lên đầu)
+export const updateExpense = (id: number, amount: string, currency: string, amount_base: number, imageUri: string) => {
+  db.runSync(
+    'UPDATE expenses SET amount = ?, currency = ?, amount_base = ?, imageUri = ? WHERE id = ?',
+    [amount, currency, amount_base, imageUri, id]
+  );
+};
+
 export const getExpenses = () => {
-  try {
-    return db.getAllSync('SELECT * FROM expenses ORDER BY id DESC');
-  } catch (error) {
-    console.error("Lỗi khi lấy dữ liệu:", error);
-    return [];
-  }
+  try { return db.getAllSync('SELECT * FROM expenses ORDER BY id DESC'); }
+  catch (error) { return []; }
 };
 
-// 5. Xóa một khoản chi tiêu dựa trên ID
 export const deleteExpense = (id: number) => {
-  try {
-    db.runSync('DELETE FROM expenses WHERE id = ?', [id]);
-    console.log(`Đã xóa ID: ${id}`);
-  } catch (error) {
-    console.error("Lỗi khi xóa dữ liệu:", error);
-  }
-};
-
-// 6. Cập nhật (Sửa) một khoản chi tiêu đã có
-export const updateExpense = (id: number, amount: string, imageUri: string) => {
-  try {
-    db.runSync(
-      'UPDATE expenses SET amount = ?, imageUri = ? WHERE id = ?',
-      [amount, imageUri, id]
-    );
-    console.log(`Đã cập nhật ID: ${id}`);
-  } catch (error) {
-    console.error("Lỗi khi cập nhật dữ liệu:", error);
-  }
+  db.runSync('DELETE FROM expenses WHERE id = ?', [id]);
 };
