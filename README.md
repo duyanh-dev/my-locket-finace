@@ -95,3 +95,8 @@ MyLocketFinance
 └─ tsconfig.json
 
 ```
+
+npx expo start -c
+
+
+npx eas-cli update --branch production --platform ios --message "Vừa sửa giao diện Calendar"
