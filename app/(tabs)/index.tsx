@@ -1,8 +1,18 @@
+/**
+ * Project: MyLocketFinance
+ * Developer: Bui Duy Anh (anhbui.dev)
+ * Shift: UI/UX Focused
+ */
+
 import React, { useState, useCallback, useRef } from 'react';
-import { StyleSheet, View, Text, Image, Dimensions, RefreshControl, TouchableOpacity, Modal, Alert, Animated } from 'react-native';
+import { 
+  StyleSheet, View, Text, Image, Dimensions, RefreshControl, 
+  TouchableOpacity, Modal, Alert, Animated, TextInput, ScrollView,
+  LayoutAnimation, Platform, UIManager
+} from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { getExpenses, initDatabase, deleteExpense } from '../../database';
+import { getExpenses, initDatabase, deleteExpense, getAllTags } from '../../database';
 import { getCurrencyConfig, Currency, CURRENCIES, convertCurrency } from '../../settings_db';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
@@ -10,8 +20,12 @@ import * as MediaLibrary from 'expo-media-library';
 
 const { width } = Dimensions.get('window');
 
-// Thêm field currency vào interface
+if (Platform.OS === 'android' && UIManager.setLayoutAnimationEnabledExperimental) {
+  UIManager.setLayoutAnimationEnabledExperimental(true);
+}
+
 interface Expense { id: number; amount: string; currency: string; amount_base: number; imageUri: string; tag: string; date: string; }
+interface TagInfo { name: string; icon: string; color: string; }
 type Period = 'day' | 'week' | 'month' | 'year';
 type LayoutType = 1 | 2 | 3;
 
@@ -23,38 +37,70 @@ export default function HomeScreen() {
   const [refreshing, setRefreshing] = useState(false);
   const [selectedItem, setSelectedItem] = useState<Expense | null>(null);
   const [currency, setCurrency] = useState<Currency>(CURRENCIES[0]);
+  
+  const [searchQuery, setSearchQuery] = useState('');
+  const [userTags, setUserTags] = useState<TagInfo[]>([]);
+  const [activeTagFilter, setActiveTagFilter] = useState<string | null>(null);
+  const [showFilters, setShowFilters] = useState(false);
 
   const scrollY = useRef(new Animated.Value(0)).current;
 
-  // --- LOGIC LOAD DATA ---
   const loadData = async () => {
     initDatabase();
     const config = await getCurrencyConfig();
     setCurrency(config);
-
-    const data = getExpenses() as Expense[];
-    filterData(data, period);
+    const data = (getExpenses() as Expense[]) || [];
+    const tags = (getAllTags() as TagInfo[]) || [];
+    setUserTags(tags);
+    applyFilters(data, period, searchQuery, activeTagFilter);
   };
 
-  useFocusEffect(useCallback(() => { loadData(); }, [period]));
+  useFocusEffect(useCallback(() => { loadData(); }, [period, searchQuery, activeTagFilter]));
 
-  // --- ANIMATION HEADER ---
+  const applyFilters = (data: Expense[], p: Period, query: string, tag: string | null) => {
+    const now = new Date();
+    let result = data;
+
+    result = result.filter(item => {
+      const itemDate = new Date(item.date);
+      if (p === 'day') return itemDate.toDateString() === now.toDateString();
+      if (p === 'week') return itemDate >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+      if (p === 'month') return itemDate.getMonth() === now.getMonth() && itemDate.getFullYear() === now.getFullYear();
+      return itemDate.getFullYear() === now.getFullYear();
+    });
+
+    if (tag) result = result.filter(item => item.tag === tag);
+
+    if (query) {
+      const q = query.toLowerCase();
+      result = result.filter(item => 
+        item.amount.includes(q) || 
+        item.tag?.toLowerCase().includes(q) ||
+        new Date(item.date).toLocaleDateString('vi-VN').includes(q)
+      );
+    }
+    setFilteredData(result);
+  };
+
+  const handleSaveImage = async (uri: string) => {
+    const { status } = await MediaLibrary.requestPermissionsAsync();
+    if (status === 'granted') {
+      try {
+        await MediaLibrary.saveToLibraryAsync(uri);
+        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        Alert.alert("Thành công", "Đã lưu ảnh vào máy bạn rồi nhé! ✅");
+      } catch (e) {
+        Alert.alert("Lỗi", "Không thể lưu ảnh rồi bạn ơi.");
+      }
+    } else {
+      Alert.alert("Quyền truy cập", "Bạn cần cấp quyền lưu ảnh để dùng tính năng này.");
+    }
+  };
+
   const headerHeight = scrollY.interpolate({ inputRange: [0, 120], outputRange: [150, 45], extrapolate: 'clamp' });
   const totalScale = scrollY.interpolate({ inputRange: [0, 120], outputRange: [1, 0.55], extrapolate: 'clamp' });
   const totalTranslateY = scrollY.interpolate({ inputRange: [0, 120], outputRange: [0, -5], extrapolate: 'clamp' });
   const headerOpacity = scrollY.interpolate({ inputRange: [0, 60], outputRange: [1, 0], extrapolate: 'clamp' });
-
-  const filterData = (data: Expense[], currentPeriod: Period) => {
-    const now = new Date();
-    const filtered = data.filter(item => {
-      const itemDate = new Date(item.date);
-      if (currentPeriod === 'day') return itemDate.toDateString() === now.toDateString();
-      if (currentPeriod === 'week') return itemDate >= new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
-      if (currentPeriod === 'month') return itemDate.getMonth() === now.getMonth();
-      return itemDate.getFullYear() === now.getFullYear();
-    });
-    setFilteredData(filtered);
-  };
 
   const getColumnWidth = () => {
     const spacing = 12;
@@ -67,11 +113,18 @@ export default function HomeScreen() {
   const groupDataByDate = (data: Expense[]) => {
     const groups: { [key: string]: Expense[] } = {};
     data.forEach(item => {
-      const dateKey = new Date(item.date).toLocaleDateString('vi-VN', { weekday: 'long', day: 'numeric', month: 'numeric' });
+      const d = new Date(item.date);
+      const dateKey = d.toLocaleDateString('vi-VN', { weekday: 'short', day: 'numeric', month: 'numeric' });
       if (!groups[dateKey]) groups[dateKey] = [];
       groups[dateKey].push(item);
     });
     return groups;
+  };
+
+  const toggleFilterSection = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut);
+    setShowFilters(!showFilters);
   };
 
   const handleEdit = (item: Expense) => {
@@ -79,54 +132,14 @@ export default function HomeScreen() {
     setSelectedItem(null);
     router.push({
       pathname: '/modal',
-      params: {
-        editId: item.id.toString(),
-        oldAmount: item.amount,
-        oldImage: item.imageUri,
-        oldCurrency: item.currency // <-- THÊM DÒNG NÀY
-      }
+      params: { editId: item.id.toString(), oldAmount: item.amount, oldImage: item.imageUri, oldCurrency: item.currency, oldTag: item.tag }
     });
-  };
-
-  const confirmDelete = (item: Expense) => {
-    Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert("Xóa món này?", "Kỷ niệm này sẽ biến mất khỏi danh sách đó nha.", [
-      { text: "Hủy", style: "cancel" },
-      { text: "Xóa luôn", style: "destructive", onPress: () => { deleteExpense(item.id); loadData(); setSelectedItem(null); } }
-    ]);
-  };
-
-  const handleSaveImage = async (uri: string) => {
-    const { status } = await MediaLibrary.requestPermissionsAsync();
-    if (status === 'granted') {
-      try {
-        await MediaLibrary.saveToLibraryAsync(uri);
-        Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        Alert.alert("Thành công", "Đã lưu ảnh!");
-      } catch (e) {
-        Alert.alert("Lỗi", "Không thể lưu ảnh.");
-      }
-    }
   };
 
   const columnWidth = getColumnWidth();
   const groupedData = groupDataByDate(filteredData);
-
-  // TÍNH TỔNG TIỀN: Quy đổi từng item về đơn vị Setting hiện tại rồi mới cộng
-  const totalAmountConverted = filteredData.reduce((sum, item) => {
-    const converted = convertCurrency(Number(item.amount), item.currency, currency.code);
-    return sum + converted;
-  }, 0);
-
-  // Hàm format hiển thị số (VNĐ ko có decimal, ngoại tệ có 2 số sau dấu phẩy)
-  const formatDisplay = (num: number) => {
-    return num.toLocaleString('vi-VN', {
-      // Nếu là VNĐ thì ko hiện số lẻ, nếu ngoại tệ thì hiện tối đa 2 số lẻ
-      maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2,
-      // Không ép buộc hiện 2 số lẻ (để 1,5 thì hiện 1,5 chứ ko phải 1,50 nếu ông ko thích)
-      minimumFractionDigits: 0
-    });
-  };
+  const totalAmountConverted = filteredData.reduce((sum, item) => sum + convertCurrency(Number(item.amount), item.currency, currency.code), 0);
+  const formatDisplay = (num: number) => num.toLocaleString('vi-VN', { maximumFractionDigits: currency.code === 'VNĐ' ? 0 : 2, minimumFractionDigits: 0 });
 
   return (
     <View style={styles.container}>
@@ -155,102 +168,98 @@ export default function HomeScreen() {
       </View>
 
       <Animated.ScrollView
-        contentContainerStyle={[styles.scrollContent, { paddingTop: 270, paddingBottom: 150 }]}
+        contentContainerStyle={[styles.scrollContent, { paddingTop: 260, paddingBottom: 150 }]}
         showsVerticalScrollIndicator={false}
         scrollEventThrottle={1}
         onScroll={Animated.event([{ nativeEvent: { contentOffset: { y: scrollY } } }], { useNativeDriver: false })}
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={loadData} tintColor="#FFD700" />}
       >
-        <View style={styles.layoutPicker}>
-          {[1, 2, 3].map(n => (
-            <TouchableOpacity key={n} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLayoutType(n as LayoutType); }}
-              style={[styles.layoutCircle, layoutType === n && styles.activeCircle]}>
-              <Ionicons name={n === 1 ? "square" : n === 2 ? "grid" : "apps"} size={12} color={layoutType === n ? '#000' : '#888'} />
-            </TouchableOpacity>
-          ))}
+        <View style={styles.controlRow}>
+          <View style={styles.layoutPicker}>
+            {[1, 2, 3].map(n => (
+              <TouchableOpacity key={n} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setLayoutType(n as LayoutType); }}
+                style={[styles.layoutCircle, layoutType === n && styles.activeCircle]}>
+                <Ionicons name={n === 1 ? "square" : n === 2 ? "grid" : "apps"} size={12} color={layoutType === n ? '#000' : '#888'} />
+              </TouchableOpacity>
+            ))}
+          </View>
+          <TouchableOpacity onPress={toggleFilterSection} style={[styles.filterToggle, (showFilters || searchQuery || activeTagFilter) && styles.activeFilterToggle]}>
+            <Ionicons name={showFilters ? "chevron-up" : "search"} size={16} color={(showFilters || searchQuery || activeTagFilter) ? "#000" : "#888"} />
+            {(searchQuery !== '' || activeTagFilter !== null) && !showFilters && <View style={styles.filterBadge} />}
+          </TouchableOpacity>
         </View>
 
-        {Object.keys(groupedData).map((date) => (
-          <View key={date} style={styles.dateSection}>
-            <View style={styles.dateHeader}>
-              <Text style={styles.dateTitle}>{date}</Text>
-              <View style={styles.dateLine} />
+        {showFilters && (
+          <View style={styles.filterSection}>
+            <View style={styles.searchContainer}>
+              <Ionicons name="search" size={16} color="#555" />
+              <TextInput style={styles.searchInput} placeholder="Tìm tiền, nhãn..." placeholderTextColor="#444" value={searchQuery} onChangeText={setSearchQuery} />
+              {searchQuery !== '' && <TouchableOpacity onPress={() => setSearchQuery('')}><Ionicons name="close-circle" size={18} color="#555" /></TouchableOpacity>}
             </View>
+            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+              <TouchableOpacity style={[styles.tagPill, activeTagFilter === null && styles.activeTagPill]} onPress={() => setActiveTagFilter(null)}>
+                <Text style={[styles.tagPillText, activeTagFilter === null && styles.activeTagPillText]}>TẤT CẢ</Text>
+              </TouchableOpacity>
+              {userTags.map((t) => (
+                <TouchableOpacity key={t.name} style={[styles.tagPill, activeTagFilter === t.name && { backgroundColor: t.color + '30', borderColor: t.color }]}
+                  onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setActiveTagFilter(activeTagFilter === t.name ? null : t.name); }}>
+                  <Ionicons name={t.icon as any} size={14} color={t.color} /><Text style={[styles.tagPillText, { color: t.color }]}> {t.name.toUpperCase()}</Text>
+                </TouchableOpacity>
+              ))}
+            </ScrollView>
+          </View>
+        )}
+
+        {Object.keys(groupedData).length > 0 ? Object.keys(groupedData).map((date) => (
+          <View key={date} style={styles.dateSection}>
+            <View style={styles.dateHeader}><Text style={styles.dateTitle}>{date.toUpperCase()}</Text><View style={styles.dateLine} /></View>
             <View style={styles.grid}>
               {groupedData[date].map((item) => {
-                // QUY ĐỔI GIÁ TRỊ TỪNG ITEM ĐỂ HIỂN THỊ ĐỒNG NHẤT VỚI SETTING
                 const displayVal = convertCurrency(Number(item.amount), item.currency, currency.code);
-
+                const tagInfo = userTags.find(t => t.name === item.tag);
                 return (
                   <View key={item.id} style={{ width: columnWidth, marginBottom: 20 }}>
-                    <TouchableOpacity
-                      style={[styles.card, { height: columnWidth }]}
-                      onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedItem(item); }}
-                    >
+                    <TouchableOpacity style={[styles.card, { height: columnWidth }]} onPress={() => { Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light); setSelectedItem(item); }}>
                       <Image source={{ uri: item.imageUri }} style={styles.image} />
-
-                      {/* HIỂN THỊ TAG NẾU CÓ */}
                       {item.tag ? (
-                        <View style={styles.itemTagBadge}>
-                          <Ionicons name="pricetag" size={8} color="#000" />
-                          <Text style={styles.itemTagText}>{item.tag.toUpperCase()}</Text>
+                        <View style={[styles.itemTagBadge, tagInfo && { backgroundColor: tagInfo.color }]}>
+                          <Ionicons name={(tagInfo?.icon as any) || "pricetag"} size={8} color="#000" /><Text style={styles.itemTagText}>{item.tag.toUpperCase()}</Text>
                         </View>
                       ) : null}
-
-                      <View style={styles.cardOverlay}>
-                        <Text style={[styles.cardAmount, { fontSize: layoutType === 3 ? 9 : 11 }]}>
-                          {formatDisplay(displayVal)}{currency.symbol}
-                        </Text>
-                      </View>
+                      <View style={styles.cardOverlay}><Text style={[styles.cardAmount, { fontSize: layoutType === 3 ? 9 : 11 }]}>{formatDisplay(displayVal)}{currency.symbol}</Text></View>
                     </TouchableOpacity>
-
                     <View style={styles.actionRow}>
-                      <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(item)}>
-                        <Ionicons name="pencil" size={12} color="#000" />
-                      </TouchableOpacity>
-                      <TouchableOpacity style={styles.btnDelete} onPress={() => confirmDelete(item)}>
-                        <Ionicons name="trash-outline" size={12} color="#FF6B6B" />
-                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.btnEdit} onPress={() => handleEdit(item)}><Ionicons name="pencil" size={12} color="#000" /></TouchableOpacity>
+                      <TouchableOpacity style={styles.btnDelete} onPress={() => {Alert.alert("Xóa?", "Bạn có chắc chắn muốn xóa món này không?", [{text:"Hủy"}, {text:"Xóa", style:"destructive", onPress:() => {deleteExpense(item.id); loadData();}}])}}><Ionicons name="trash-outline" size={12} color="#FF6B6B" /></TouchableOpacity>
                     </View>
                   </View>
                 );
               })}
             </View>
           </View>
-        ))}
+        )) : (
+          <View style={styles.emptyState}><Ionicons name="search-outline" size={50} color="#333" /><Text style={styles.emptyText}>Không tìm thấy món nào...</Text></View>
+        )}
       </Animated.ScrollView>
 
       {/* MODAL CHI TIẾT */}
-      <Modal visible={!!selectedItem} animationType="fade" transparent={true} statusBarTranslucent>
+      <Modal visible={!!selectedItem} animationType="fade" transparent statusBarTranslucent>
         <View style={styles.fullViewContainer}>
-          <TouchableOpacity style={styles.closeFullView} onPress={() => setSelectedItem(null)}>
-            <Ionicons name="close-circle" size={44} color="#fff" />
-          </TouchableOpacity>
-
+          <TouchableOpacity style={styles.closeFullView} onPress={() => setSelectedItem(null)}><Ionicons name="close-circle" size={44} color="#fff" /></TouchableOpacity>
           {selectedItem && (
             <View style={styles.fullContent}>
               <View style={styles.fullImageWrapper}>
                 <Image source={{ uri: selectedItem.imageUri }} style={styles.fullImage} />
+                {/* TRẢ LẠI NÚT LƯU ẢNH TẠI ĐÂY */}
                 <TouchableOpacity style={styles.saveFloatingBtn} onPress={() => handleSaveImage(selectedItem.imageUri)}>
                   <Ionicons name="download-outline" size={24} color="#fff" />
                 </TouchableOpacity>
               </View>
-
-              {/* TRONG CHI TIẾT: HIỂN THỊ THEO ĐƠN VỊ SETTING ĐÃ CHỌN */}
-              <Text style={styles.fullAmount}>
-                {formatDisplay(convertCurrency(Number(selectedItem.amount), selectedItem.currency, currency.code))} {currency.code}
-              </Text>
+              <Text style={styles.fullAmount}>{formatDisplay(convertCurrency(Number(selectedItem.amount), selectedItem.currency, currency.code))} {currency.code}</Text>
               <Text style={styles.fullDate}>{new Date(selectedItem.date).toLocaleString('vi-VN')}</Text>
-
               <View style={styles.fullActions}>
-                <TouchableOpacity style={styles.fullBtnEdit} onPress={() => handleEdit(selectedItem)}>
-                  <Ionicons name="pencil" size={20} color="black" />
-                  <Text style={styles.fullBtnText}>Chỉnh sửa</Text>
-                </TouchableOpacity>
-                <TouchableOpacity style={styles.fullBtnDelete} onPress={() => confirmDelete(selectedItem)}>
-                  <Ionicons name="trash" size={20} color="white" />
-                  <Text style={[styles.fullBtnText, { color: 'white' }]}>Xóa món này</Text>
-                </TouchableOpacity>
+                <TouchableOpacity style={styles.fullBtnEdit} onPress={() => handleEdit(selectedItem)}><Ionicons name="pencil" size={20} color="black" /><Text style={styles.fullBtnText}>Chỉnh sửa</Text></TouchableOpacity>
+                <TouchableOpacity style={styles.fullBtnDelete} onPress={() => {deleteExpense(selectedItem.id); setSelectedItem(null); loadData();}}><Ionicons name="trash" size={20} color="white" /><Text style={[styles.fullBtnText, { color: 'white' }]}>Xóa</Text></TouchableOpacity>
               </View>
             </View>
           )}
@@ -277,13 +286,24 @@ const styles = StyleSheet.create({
   activeTab: { backgroundColor: '#323235' },
   tabText: { color: '#555', fontWeight: 'bold', fontSize: 10 },
   activeTabText: { color: '#FFF' },
-  layoutPicker: { flexDirection: 'row', justifyContent: 'center', gap: 20, marginBottom: 25 },
+  controlRow: { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', marginTop: 15, marginBottom: 20, gap: 15 },
+  layoutPicker: { flexDirection: 'row', backgroundColor: '#222224', padding: 4, borderRadius: 20, gap: 10 },
   layoutCircle: { width: 32, height: 32, borderRadius: 16, backgroundColor: '#222224', justifyContent: 'center', alignItems: 'center' },
   activeCircle: { backgroundColor: '#FFD700' },
+  filterToggle: { width: 40, height: 40, borderRadius: 20, backgroundColor: '#222224', justifyContent: 'center', alignItems: 'center', position: 'relative' },
+  activeFilterToggle: { backgroundColor: '#FFD700' },
+  filterBadge: { position: 'absolute', top: 0, right: 0, width: 10, height: 10, borderRadius: 5, backgroundColor: '#FFD700', borderWidth: 2, borderColor: '#161618' },
+  filterSection: { backgroundColor: '#1c1c1e', marginHorizontal: 10, padding: 15, borderRadius: 25, marginBottom: 20, borderWidth: 1, borderColor: '#222224' },
+  searchContainer: { flexDirection: 'row', alignItems: 'center', backgroundColor: '#161618', paddingHorizontal: 12, borderRadius: 15, height: 40, marginBottom: 15 },
+  searchInput: { flex: 1, color: '#fff', fontSize: 13, marginLeft: 8 },
+  tagPill: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 6, borderRadius: 15, borderWidth: 1, borderColor: '#333', marginRight: 8 },
+  activeTagPill: { backgroundColor: '#FFD700', borderColor: '#FFD700' },
+  tagPillText: { color: '#888', fontSize: 10, fontWeight: '800' },
+  activeTagPillText: { color: '#000' },
   scrollContent: { paddingHorizontal: 20 },
-  dateSection: { marginBottom: 25 },
+  dateSection: { marginBottom: 35 },
   dateHeader: { flexDirection: 'row', alignItems: 'center', marginBottom: 15, gap: 10 },
-  dateTitle: { color: '#888', fontSize: 13, fontWeight: 'bold' },
+  dateTitle: { color: '#555', fontSize: 11, fontWeight: '900', letterSpacing: 1 },
   dateLine: { flex: 1, height: 1, backgroundColor: '#222224' },
   grid: { flexDirection: 'row', flexWrap: 'wrap', gap: 12 },
   card: { borderRadius: 30, overflow: 'hidden', backgroundColor: '#222224' },
@@ -306,18 +326,8 @@ const styles = StyleSheet.create({
   fullBtnEdit: { flexDirection: 'row', backgroundColor: '#FFD700', padding: 18, borderRadius: 22, alignItems: 'center', gap: 10, flex: 1, justifyContent: 'center' },
   fullBtnDelete: { flexDirection: 'row', backgroundColor: '#222', padding: 18, borderRadius: 22, alignItems: 'center', gap: 10, flex: 1, justifyContent: 'center' },
   fullBtnText: { fontWeight: 'bold', fontSize: 15, color: '#000' },
-  itemTagBadge: {
-    position: 'absolute',
-    top: 10,
-    left: 10,
-    backgroundColor: '#FFD700',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 3,
-    zIndex: 10
-  },
-  itemTagText: { color: '#000', fontSize: 7, fontWeight: '900' },
+  itemTagBadge: { position: 'absolute', top: 12, left: 12, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 10, flexDirection: 'row', alignItems: 'center', gap: 4, zIndex: 10, shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.3, shadowRadius: 3 },
+  itemTagText: { color: '#000', fontSize: 8, fontWeight: '900' },
+  emptyState: { alignItems: 'center', marginTop: 50 },
+  emptyText: { color: '#444', marginTop: 15, fontWeight: '600' }
 });

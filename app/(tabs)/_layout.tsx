@@ -19,9 +19,6 @@ export default function TabLayout() {
       }}
       tabBar={(props) => <CustomTabBar {...props} />}
     >
-      {/* LƯU Ý: Tên 'name' ở đây PHẢI khớp 100% với tên file .tsx trong thư mục (tabs) 
-         Nếu file của ông là settings.tsx thì đổi 'explore' thành 'settings'
-      */}
       <Tabs.Screen name="calendar" />
       <Tabs.Screen name="index" />
       <Tabs.Screen name="explore" /> 
@@ -51,11 +48,11 @@ function CustomTabBar({ state, navigation }: any) {
             iconName = isFocused ? 'home-sharp' : 'home-outline';
           } else if (route.name === 'calendar') {
             iconName = isFocused ? 'calendar-sharp' : 'calendar-outline';
-          } else if (route.name === 'explore' || route.name === 'settings') {
-            // Dùng logic này để dù file tên là 'explore' hay 'settings' thì vẫn hiện bánh răng
+          } else if (route.name === 'explore') {
+            iconName = isFocused ? 'albums-sharp' : 'albums-outline';
+          } else if (route.name === 'settings') {
             iconName = isFocused ? 'settings-sharp' : 'settings-outline';
           } else {
-            // Nếu lòi ra file lạ, ta vẫn để icon mặc định để ông biết đường sửa
             iconName = isFocused ? 'ellipsis-horizontal-sharp' : 'ellipsis-horizontal-outline';
           }
 

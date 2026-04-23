@@ -94,7 +94,7 @@ export default function ExploreScreen() {
   };
 
   const confirmDeleteAlbum = (name: string) => {
-    Alert.alert("Xóa Album?", `Mục "${name}" sẽ bị xóa, ảnh vẫn còn ở màn hình chính.`, [
+    Alert.alert("Xóa Tag?", `Mục "${name}" sẽ bị xóa, ảnh vẫn còn ở màn hình chính.`, [
       { text: "Hủy", style: "cancel" },
       { text: "Xóa", style: "destructive", onPress: () => { deleteTag(name); loadData(); } }
     ]);
@@ -102,7 +102,7 @@ export default function ExploreScreen() {
 
   const confirmDeleteItem = (id: number) => {
     Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning);
-    Alert.alert("Xác nhận xóa", "Món chi tiêu này sẽ biến mất vĩnh viễn đó ông Anh!", [
+    Alert.alert("Xác nhận xóa", "Món chi tiêu này sẽ biến mất vĩnh viễn đó bạn nhé", [
       { text: "Hủy", style: "cancel" },
       { text: "Xóa luôn", style: "destructive", onPress: () => { deleteExpense(id); loadData(); } }
     ]);
@@ -171,7 +171,6 @@ export default function ExploreScreen() {
                 </View>
               </TouchableOpacity>
 
-              {/* NÚT XÓA SỬA NẰM NGOÀI ĐỂ DỄ CLICK - GIỐNG INDEX */}
               <View style={styles.itemActionRow}>
                 <TouchableOpacity 
                     style={styles.actionBtn} 
@@ -197,7 +196,7 @@ export default function ExploreScreen() {
     <GestureHandlerRootView style={{ flex: 1 }}>
       <View style={styles.container}>
         <View style={styles.header}>
-          <Text style={styles.title}>Khám phá</Text>
+          <Text style={styles.title}>Tag list</Text>
           <TouchableOpacity onPress={() => { resetForm(); toggleModal(true); }}>
             <Ionicons name="add-circle" size={38} color="#FFD700" />
           </TouchableOpacity>
@@ -238,7 +237,7 @@ export default function ExploreScreen() {
               <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
                 <View style={styles.modalContent}>
                   <View style={styles.modalTop}>
-                    <Text style={styles.modalTitle}>{isEditAlbum ? "Sửa Album" : "Album mới"}</Text>
+                    <Text style={styles.modalTitle}>{isEditAlbum ? "Sửa Tag" : "Tag mới"}</Text>
                     <TouchableOpacity onPress={() => toggleModal(false)}><Ionicons name="close-circle" size={30} color="#444" /></TouchableOpacity>
                   </View>
                   
@@ -298,13 +297,11 @@ const styles = StyleSheet.create({
   albumSub: { fontSize: 13, fontWeight: '700', marginTop: 2 },
   albumAddBtn: { width: 36, height: 36, borderRadius: 18, justifyContent: 'center', alignItems: 'center' },
 
-  // GRID OPTIMIZED
   gridContent: { paddingHorizontal: 20, paddingBottom: 100 },
   itemCard: { width: ITEM_WIDTH, marginBottom: 25, marginRight: 20 },
   imageWrapper: { borderRadius: 28, overflow: 'hidden', position: 'relative' },
   itemImg: { width: '100%', aspectRatio: 1 },
   
-  // GIÁ TIỀN TRONG ẢNH
   itemPriceBadge: { 
     position: 'absolute', 
     bottom: 12, 
@@ -316,7 +313,6 @@ const styles = StyleSheet.create({
   },
   itemPriceText: { color: '#fff', fontSize: 12, fontWeight: '900' },
 
-  // NÚT BẤM NGOÀI ẢNH (ĐỒNG BỘ INDEX)
   itemActionRow: { 
     flexDirection: 'row', 
     justifyContent: 'center', 
