@@ -5,27 +5,26 @@ import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
 import * as Haptics from 'expo-haptics';
 
-const { width } = Dimensions.get('window');
-
 export default function TabLayout() {
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        // Cách ẩn tabbar gốc an toàn nhất để hiện Pill
         tabBarStyle: {
           position: 'absolute',
           height: 0,
           borderTopWidth: 0,
           elevation: 0,
         },
-        // contentStyle: { backgroundColor: '#161618' }
       }}
       tabBar={(props) => <CustomTabBar {...props} />}
     >
+      {/* LƯU Ý: Tên 'name' ở đây PHẢI khớp 100% với tên file .tsx trong thư mục (tabs) 
+         Nếu file của ông là settings.tsx thì đổi 'explore' thành 'settings'
+      */}
       <Tabs.Screen name="calendar" />
       <Tabs.Screen name="index" />
-      <Tabs.Screen name="explore" />
+      <Tabs.Screen name="explore" /> 
     </Tabs>
   );
 }
@@ -45,18 +44,28 @@ function CustomTabBar({ state, navigation }: any) {
             }
           };
 
-          let iconName: any = 'home';
-          if (route.name === 'calendar') iconName = 'grid-outline';
-          if (route.name === 'index') iconName = 'home';
-          if (route.name === 'explore') iconName = 'chatbubble-outline';
+          // --- LOGIC GÁN ICON CHUẨN ---
+          let iconName: any;
+          
+          if (route.name === 'index') {
+            iconName = isFocused ? 'home-sharp' : 'home-outline';
+          } else if (route.name === 'calendar') {
+            iconName = isFocused ? 'calendar-sharp' : 'calendar-outline';
+          } else if (route.name === 'explore' || route.name === 'settings') {
+            // Dùng logic này để dù file tên là 'explore' hay 'settings' thì vẫn hiện bánh răng
+            iconName = isFocused ? 'settings-sharp' : 'settings-outline';
+          } else {
+            // Nếu lòi ra file lạ, ta vẫn để icon mặc định để ông biết đường sửa
+            iconName = isFocused ? 'ellipsis-horizontal-sharp' : 'ellipsis-horizontal-outline';
+          }
 
           return (
             <TouchableOpacity key={route.key} onPress={onPress} style={styles.tabItem}>
               <View style={[styles.iconWrapper, isFocused && styles.activeCircle]}>
                 <Ionicons
                   name={iconName}
-                  size={isFocused ? 22 : 18}
-                  color={isFocused ? "#FFD700" : "#555"}
+                  size={isFocused ? 24 : 20}
+                  color={isFocused ? "#FFD700" : "#888"}
                 />
               </View>
             </TouchableOpacity>
@@ -70,7 +79,7 @@ function CustomTabBar({ state, navigation }: any) {
 const styles = StyleSheet.create({
   container: {
     position: 'absolute',
-    bottom: 40, // Đẩy lên một chút cho đẹp
+    bottom: 40,
     left: 0,
     right: 0,
     alignItems: 'center',
@@ -87,7 +96,6 @@ const styles = StyleSheet.create({
     borderWidth: 0.5,
     borderColor: 'rgba(255, 255, 255, 0.1)',
     overflow: 'hidden',
-    // Thêm bóng đổ cho cái Pill nó nổi hẳn lên
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 10 },
     shadowOpacity: 0.3,
@@ -107,6 +115,6 @@ const styles = StyleSheet.create({
     borderRadius: 20,
   },
   activeCircle: {
-    backgroundColor: 'rgba(255, 215, 0, 0.15)', // Màu vàng nhẹ bao quanh icon đang chọn
+    backgroundColor: 'rgba(255, 215, 0, 0.15)',
   }
 });

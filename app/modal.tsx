@@ -23,25 +23,25 @@ export default function CameraModal() {
   const params = useLocalSearchParams();
   const [permission, requestPermission] = useCameraPermissions();
   // Sửa dòng khai báo state currency:
-const [currency, setCurrency] = useState<Currency>({ 
-  label: '', 
-  code: (params.oldCurrency as string) || 'VNĐ', // Lấy từ params nếu có
-  symbol: params.oldCurrency === 'VNĐ' ? 'đ' : '$', // Tạm thời hoặc để trống
-  rate: 1 
-});
+  const [currency, setCurrency] = useState<Currency>({
+    label: '',
+    code: (params.oldCurrency as string) || 'VNĐ', // Lấy từ params nếu có
+    symbol: params.oldCurrency === 'VNĐ' ? 'đ' : '$', // Tạm thời hoặc để trống
+    rate: 1
+  });
 
   // --- STATE ---
   const editId = params.editId ? String(params.editId) : null;
   const [photo, setPhoto] = useState<string | null>(params.oldImage ? String(params.oldImage) : null);
 
   // Format ban đầu nếu edit
-  const initialAmount = params.oldAmount 
-  ? (params.oldCurrency === 'VNĐ' 
-      ? String(params.oldAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.') 
-      : String(params.oldAmount).replace('.', ',')) 
-  : '';
+  const initialAmount = params.oldAmount
+    ? (params.oldCurrency === 'VNĐ'
+      ? String(params.oldAmount).replace(/\B(?=(\d{3})+(?!\d))/g, '.')
+      : String(params.oldAmount).replace('.', ','))
+    : '';
 
-const [amount, setAmount] = useState(initialAmount);
+  const [amount, setAmount] = useState(initialAmount);
   const [facing, setFacing] = useState<'back' | 'front'>('back');
   const [zoom, setZoom] = useState(ZOOM_1X);
   const [focusPos, setFocusPos] = useState({ x: 0, y: 0 });
@@ -58,82 +58,95 @@ const [amount, setAmount] = useState(initialAmount);
   const startDist = useRef<number | null>(null);
   const startZoom = useRef<number>(ZOOM_1X);
 
-  useEffect(() => {
-    const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
-    const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
-    const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
-    const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+  // Trong app/modal.tsx
 
-    const initConfig = async () => {
+useEffect(() => {
+  const showEvent = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+  const hideEvent = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+  const showSub = Keyboard.addListener(showEvent, () => setKeyboardVisible(true));
+  const hideSub = Keyboard.addListener(hideEvent, () => setKeyboardVisible(false));
+
+  const initConfig = async () => {
+    // 1. Lấy cấu hình Setting hiện tại của máy
     const config = await getCurrencyConfig();
     setCurrency(config);
 
-    // LOGIC CÂN NÃO KHI NHẤN EDIT
     if (editId && params.oldAmount && params.oldCurrency) {
-  const converted = convertCurrency(
-    Number(params.oldAmount),
-    String(params.oldCurrency),
-    config.code
-  );
+      const isSameCurrency = params.oldCurrency === config.code;
+      let displayValue = "";
 
-  let rawString = "";
-  if (config.code === 'VNĐ') {
-    rawString = Math.round(converted).toString();
-  } else {
-    // Chuyển 1500.5 -> "1500,5" (đổi chấm thành phẩy trước khi đưa vào hàm format)
-    rawString = converted.toString().replace('.', ',');
-  }
+      if (isSameCurrency) {
+        // --- CHIÊU NÀY QUAN TRỌNG ---
+        // Nếu cùng loại tiền, lấy thẳng giá trị gốc từ DB, ko tính toán để tránh lệch 0.01
+        displayValue = String(params.oldAmount).replace('.', ',');
+      } else {
+        // Chỉ quy đổi khi người dùng đã đổi Setting sang tiền tệ khác
+        const converted = convertCurrency(
+          Number(params.oldAmount),
+          String(params.oldCurrency),
+          config.code
+        );
 
-  // Gọi formatCurrency để nó tự thêm các dấu chấm hàng nghìn
-  setAmount(formatCurrency(rawString, config.code));
-}
+        if (config.code === 'VNĐ') {
+          displayValue = Math.round(converted).toString();
+        } else {
+          // Dùng toFixed(2) để chốt chặn sai số làm tròn của máy tính
+          displayValue = converted.toFixed(2).replace('.', ',');
+          // Xóa đuôi ,00 nếu là số tròn cho đẹp
+          if (displayValue.endsWith(',00')) displayValue = displayValue.split(',')[0];
+        }
+      }
+
+      // Đẩy vào ô nhập liệu qua bộ lọc format
+      setAmount(formatCurrency(displayValue, config.code));
+    }
   };
   initConfig();
 
-    return () => {
-      showSub.remove();
-      hideSub.remove();
-      if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
-      if (focusTimeout.current) clearTimeout(focusTimeout.current);
-    };
-  }, [editId]); // Thêm editId vào đây để nó re-run nếu id thay đổi
+  return () => {
+    showSub.remove();
+    hideSub.remove();
+    if (animationFrameId.current) cancelAnimationFrame(animationFrameId.current);
+    if (focusTimeout.current) clearTimeout(focusTimeout.current);
+  };
+}, [editId]);
 
   const formatCurrency = (val: string, forcedCode?: string) => {
-  if (!val) return '';
-  const activeCode = forcedCode || currency.code;
+    if (!val) return '';
+    const activeCode = forcedCode || currency.code;
 
-  // 1. Xử lý đầu vào: Xóa tất cả dấu chấm (phân cách hàng nghìn cũ)
-  // Chỉ giữ lại số và dấu phẩy
-  let cleanNext = val.replace(/\./g, ''); 
-  
-  // Nếu là VNĐ, xóa luôn cả dấu phẩy (không cho nhập thập phân)
-  if (activeCode === 'VNĐ') {
-    cleanNext = cleanNext.replace(/,/g, '');
-  }
+    // 1. Xử lý đầu vào: Xóa tất cả dấu chấm (phân cách hàng nghìn cũ)
+    // Chỉ giữ lại số và dấu phẩy
+    let cleanNext = val.replace(/\./g, '');
 
-  // Chặn không cho nhập ký tự lạ, chỉ giữ số và tối đa 1 dấu phẩy
-  cleanNext = cleanNext.replace(/[^0-9,]/g, '');
-  const parts = cleanNext.split(',');
-  
-  // Nếu có nhiều hơn 1 dấu phẩy, chỉ lấy cái đầu tiên
-  let integerPart = parts[0];
-  let decimalPart = parts[1] !== undefined ? parts[1].substring(0, 2) : null;
+    // Nếu là VNĐ, xóa luôn cả dấu phẩy (không cho nhập thập phân)
+    if (activeCode === 'VNĐ') {
+      cleanNext = cleanNext.replace(/,/g, '');
+    }
 
-  // 2. Định dạng phần nguyên: Thêm dấu chấm mỗi 3 chữ số (1000 -> 1.000)
-  const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    // Chặn không cho nhập ký tự lạ, chỉ giữ số và tối đa 1 dấu phẩy
+    cleanNext = cleanNext.replace(/[^0-9,]/g, '');
+    const parts = cleanNext.split(',');
 
-  // 3. Lắp ráp lại
-  if (decimalPart !== null) {
-    return `${formattedInteger},${decimalPart}`;
-  }
-  
-  // Trường hợp người dùng mới gõ dấu phẩy (ví dụ "1.500,")
-  if (cleanNext.includes(',')) {
-    return `${formattedInteger},`;
-  }
+    // Nếu có nhiều hơn 1 dấu phẩy, chỉ lấy cái đầu tiên
+    let integerPart = parts[0];
+    let decimalPart = parts[1] !== undefined ? parts[1].substring(0, 2) : null;
 
-  return formattedInteger;
-};
+    // 2. Định dạng phần nguyên: Thêm dấu chấm mỗi 3 chữ số (1000 -> 1.000)
+    const formattedInteger = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+    // 3. Lắp ráp lại
+    if (decimalPart !== null) {
+      return `${formattedInteger},${decimalPart}`;
+    }
+
+    // Trường hợp người dùng mới gõ dấu phẩy (ví dụ "1.500,")
+    if (cleanNext.includes(',')) {
+      return `${formattedInteger},`;
+    }
+
+    return formattedInteger;
+  };
 
   const handleSaveToGallery = async () => {
     if (!photo) return;
@@ -212,24 +225,24 @@ const [amount, setAmount] = useState(initialAmount);
   };
 
   const handleFinalSave = () => {
-  if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền.");
+    if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền.");
 
-  // Bước 1: Xóa tất cả dấu chấm (hàng nghìn)
-  // Bước 2: Đổi dấu phẩy (thập phân) thành dấu chấm để máy hiểu
-  const normalized = amount.replace(/\./g, '').replace(',', '.');
-  const numAmount = parseFloat(normalized);
+    // Bước 1: Xóa tất cả dấu chấm (hàng nghìn)
+    // Bước 2: Đổi dấu phẩy (thập phân) thành dấu chấm để máy hiểu
+    const normalized = amount.replace(/\./g, '').replace(',', '.');
+    const numAmount = parseFloat(normalized);
 
-  if (isNaN(numAmount)) return Alert.alert("Lỗi", "Số tiền không hợp lệ");
+    if (isNaN(numAmount)) return Alert.alert("Lỗi", "Số tiền không hợp lệ");
 
-  const baseAmount = numAmount * (currency.rate || 1);
+    const baseAmount = numAmount * (currency.rate || 1);
 
-  if (editId && editId !== "undefined") {
-    updateExpense(Number(editId), normalized, currency.code, baseAmount, photo!);
-  } else {
-    addExpense(normalized, currency.code, baseAmount, photo!);
-  }
-  router.back();
-};
+    if (editId && editId !== "undefined") {
+      updateExpense(Number(editId), normalized, currency.code, baseAmount, photo!);
+    } else {
+      addExpense(normalized, currency.code, baseAmount, photo!);
+    }
+    router.back();
+  };
 
   if (!permission?.granted) {
     return (
