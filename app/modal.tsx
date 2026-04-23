@@ -224,25 +224,29 @@ useEffect(() => {
     }
   };
 
-  const handleFinalSave = () => {
-    if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền.");
+  // Trong modal.tsx
 
-    // Bước 1: Xóa tất cả dấu chấm (hàng nghìn)
-    // Bước 2: Đổi dấu phẩy (thập phân) thành dấu chấm để máy hiểu
-    const normalized = amount.replace(/\./g, '').replace(',', '.');
-    const numAmount = parseFloat(normalized);
+const handleFinalSave = () => {
+  if (!amount) return Alert.alert("Thiếu tiền!", "Ông chưa nhập số tiền.");
 
-    if (isNaN(numAmount)) return Alert.alert("Lỗi", "Số tiền không hợp lệ");
+  const normalized = amount.replace(/\./g, '').replace(',', '.');
+  const numAmount = parseFloat(normalized);
+  if (isNaN(numAmount)) return Alert.alert("Lỗi", "Số tiền không hợp lệ");
 
-    const baseAmount = numAmount * (currency.rate || 1);
+  const baseAmount = numAmount * (currency.rate || 1);
 
-    if (editId && editId !== "undefined") {
-      updateExpense(Number(editId), normalized, currency.code, baseAmount, photo!);
-    } else {
-      addExpense(normalized, currency.code, baseAmount, photo!);
-    }
-    router.back();
-  };
+  // LẤY TAG TỪ PARAMS (Nếu mở từ Explore sẽ có tag, mở từ Home sẽ không có)
+  const activeTag = params.tag ? String(params.tag) : '';
+
+  if (editId && editId !== "undefined") {
+    // Truyền thêm tham số tag vào cuối
+    updateExpense(Number(editId), normalized, currency.code, baseAmount, photo!, activeTag);
+  } else {
+    // Truyền thêm tham số tag vào cuối
+    addExpense(normalized, currency.code, baseAmount, photo!, activeTag);
+  }
+  router.back();
+};
 
   if (!permission?.granted) {
     return (
