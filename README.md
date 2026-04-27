@@ -1,61 +1,53 @@
-# Welcome to your Expo app 👋
+# 📸 FinSnap - Snapshot Your Spending, Archive Your Life.
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+[![React Native](https://img.shields.io/badge/React_Native-v0.76-blue.svg?logo=react)](https://reactnative.dev/)
+[![Expo](https://img.shields.io/badge/Expo-SDK_52-black.svg?logo=expo)](https://expo.dev/)
+[![TypeScript](https://img.shields.io/badge/TypeScript-5.x-blue.svg?logo=typescript)](https://www.typescriptlang.org/)
+[![License](https://img.shields.io/badge/License-MIT-green.svg)](https://opensource.org/licenses/MIT)
 
-## Get started
+**FinSnap** (formerly MyLocketFinance) is a visual-first expense tracking mobile application inspired by the minimalist aesthetic of **Locket**. Unlike traditional finance apps that focus on cold numbers and spreadsheets, FinSnap turns every transaction into a visual memory, helping you manage your budget through the lens of your life.
 
-1. Install dependencies
+---
 
-   ```bash
-   npm install
-   ```
+## ✨ Key Features
 
-2. Start the app
+### 📸 Pro Camera Interface
+- **Native-feel Experience:** Built with `expo-camera` for high-performance capturing.
+- **Precision Zoom:** Full support for **0.5x Ultra-wide**, 1x, and digital zoom.
+- **Smart Focus:** Custom animated focus rings with haptic feedback.
+- **Quick Snap:** Designed for speed—capture the receipt or the item in under 2 seconds.
 
-   ```bash
-   npx expo start
-   ```
+### 📅 Smart Calendar Stacks
+- **Visual Grouping:** Transactions are automatically grouped into "Stacks" by Album/Tag.
+- **Interactive Stacks:** Tap on a stack (e.g., *Emart* or *Travel*) to "unfold" the detailed history of that day.
+- **Deep Dark Mode:** A sleek, unified interface optimized for OLED screens.
 
-In the output, you'll find options to open the app in a
+### 🌍 Global Finance Engine
+- **Live Exchange Rates:** Real-time synchronization using Open Exchange Rates API.
+- **Smart Conversion:** Automatically converts foreign currencies to your base currency while maintaining precision to avoid floating-point errors.
+- **Multi-Currency Support:** Track spending in VNĐ, USD, EUR, and more.
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+### 📁 Aesthetic Organization
+- **Visual Albums:** Organize spending into custom albums like "Daily Grocery", "Coffee Time", or "Paris Trip".
+- **Quick Tagging:** Create and assign new albums directly from the camera preview.
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+---
 
-## Get a fresh project
+## 🏗️ Architecture & Technical Stack
 
-When you're ready, run:
+FinSnap is built with a **Modular Feature-based Architecture**, prioritizing scalability and clean code:
 
-```bash
-npm run reset-project
-```
-
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
-
-## Learn more
-
-To learn more about developing your project with Expo, look at the following resources:
-
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
-
-## Join the community
-
-Join our community of developers creating universal apps.
-
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
-
+- **Frontend:** React Native (Expo SDK 52)
+- **Routing:** Expo Router (File-based routing)
+- **Database:** SQLite (via `expo-sqlite`) for local-first, private data storage.
+- **State Management:** React Hooks & Context API.
+- **Interactions:** `react-native-reanimated` & `expo-haptics` for premium feel.
 
 npx expo start -c
 
-
 npx eas-cli update --branch production --platform ios --message "updated"
 
-
+### Project Structure
 ```
 MyLocketFinance
 ├─ app
