@@ -82,7 +82,6 @@ MyLocketFinance
 │     └─ icon-symbol.tsx
 ├─ constants
 │  └─ theme.ts
-├─ database.ts
 ├─ eas.json
 ├─ eslint.config.js
 ├─ hooks
@@ -94,7 +93,30 @@ MyLocketFinance
 ├─ README.md
 ├─ scripts
 │  └─ reset-project.js
-├─ settings_db.ts
+├─ src
+│  ├─ api
+│  ├─ components
+│  │  ├─ common
+│  │  ├─ features
+│  │  │  ├─ calendar
+│  │  │  └─ camera
+│  │  │     ├─ CameraControls.tsx
+│  │  │     ├─ CameraViewfinder.tsx
+│  │  │     ├─ ExpenseForm.tsx
+│  │  │     └─ TagPickerModal.tsx
+│  │  ├─ navigation
+│  │  │  └─ CustomTabBar.tsx
+│  │  └─ services
+│  │     ├─ database.ts
+│  │     └─ settings_db.ts
+│  ├─ screens
+│  │  ├─ CalendarScreen.tsx
+│  │  ├─ CameraModalScreen.tsx
+│  │  ├─ Home.tsx
+│  │  ├─ SettingScreen.tsx
+│  │  └─ TagList.tsx
+│  └─ types
+│     └─ index.ts
 └─ tsconfig.json
 
 ```
