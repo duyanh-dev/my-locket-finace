@@ -49,12 +49,21 @@ Join our community of developers creating universal apps.
 - [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
 - [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
 
+
+npx expo start -c
+
+
+npx eas-cli update --branch production --platform ios --message "updated"
+
+
 ```
 MyLocketFinance
 ├─ app
 │  ├─ (tabs)
+│  │  ├─ calendar.tsx
 │  │  ├─ explore.tsx
 │  │  ├─ index.tsx
+│  │  ├─ settings.tsx
 │  │  └─ _layout.tsx
 │  ├─ modal.tsx
 │  └─ _layout.tsx
@@ -81,22 +90,19 @@ MyLocketFinance
 │     └─ icon-symbol.tsx
 ├─ constants
 │  └─ theme.ts
+├─ database.ts
+├─ eas.json
 ├─ eslint.config.js
 ├─ hooks
 │  ├─ use-color-scheme.ts
 │  ├─ use-color-scheme.web.ts
 │  └─ use-theme-color.ts
-├─ newReadme.md
 ├─ package-lock.json
 ├─ package.json
 ├─ README.md
 ├─ scripts
 │  └─ reset-project.js
+├─ settings_db.ts
 └─ tsconfig.json
 
 ```
-
-npx expo start -c
-
-
-npx eas-cli update --branch production --platform ios --message "updated"
